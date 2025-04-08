@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4 Ровных Квадрата</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-wrap: wrap;
+            box-sizing: border-box;
+        }
+
+        .square {
+            width: 50%;  /* 50% ширины экрана */
+            height: 50%; /* 50% высоты экрана */
+            box-sizing: border-box;
+            border: 2px solid rgba(255, 255, 255, 0.3); /* Полупрозрачная рамка */
+        }
+
+        .top-left {
+            background-color: #2b2b2b;
+        }
+
+        .top-right {
+            background-color: #444444;
+        }
+
+        .bottom-left {
+            background-color: #666666;
+        }
+
+        .bottom-right {
+            background-color: #888888;
+        }
+    </style>
+</head>
+<body>
+    <div class="square top-left"></div>
+    <div class="square top-right"></div>
+    <div class="square bottom-left"></div>
+    <div class="square bottom-right"></div>
+</body>
+</html>
