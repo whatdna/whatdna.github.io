@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Терминал — Распределённое Хранилище Для Информации в Виде ДНК</title>
+  <style>
+    /* Убираем скроллбары */
+    ::-webkit-scrollbar { width: 0; height: 0; }
+
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: #1e1e1e;
+      color: #ccc;
+      font-family: Menlo, Consolas, monospace;
+      overflow: hidden;
+    }
+    .terminal {
+      position: relative;
+      display: flex; flex-direction: column;
+      height: 100%;
+      padding-bottom: 60px; /* пространство под input */
+    }
+
+    /* Канвас и индикаторы: подложка "Translucent Blurred Glass" */
+    .indicators {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 60px;
+      background: rgba(30,30,30,0.4);
+      backdrop-filter: blur(8px);
+      overflow: hidden;
+      z-index: 1;
+    }
+    .indicators canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    .node {
+      position: absolute;
+      display: flex; align-items: center;
+      opacity: .2;
+      animation: float 6s ease-in-out infinite;
+      z-index: 2;
+    }
+    .node .dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      margin-right: 6px;
+      background: gray;
+      box-shadow: 0 0 8px rgba(0,0,0,0.5);
+    }
+    .node .info {
+      font-size: 0.7rem;
+      line-height: 1.2;
+      color: #eee;
+      background: rgba(0,0,0,0.6);
+      padding: 4px 6px;
+      border-radius: 4px;
+    }
+    @keyframes float {
+      0%,100% { transform: translate(0,0); }
+      50% { transform: translate(0,8px); }
+    }
+
+    /* Вывод терминала */
+    .output {
+      position: relative; z-index: 3;
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      line-height: 1.4;
+    }
+    .output .line {
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 2px 0;
+    }
+
+    /* Панель ввода */
+    .input-area {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 60px;
+      background: #252526;
+      display: flex; align-items: center;
+      padding: 0 10px;
+      box-shadow: 0px 1px 1px 0px rgba(0,0,0,0.5);
+      z-index: 4;
+    }
+    .options {
+      display: flex; gap: 6px;
+      height: 100%;
+    }
+    .options.left  { margin-right: 1.25%; }
+    .options.right { margin-left: 1.25%; }
+    .options label {
+      display: inline-block; height: 100%;
+    }
+    .options input {
+      position: absolute; opacity: 0; pointer-events: none;
+    }
+    .option {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; padding: 0 12px;
+      border-radius: 4px;
+      background: #3c3c3c; color: #ccc;
+      cursor: pointer; transition: background .2s, color .2s;
+      font-size: 0.9rem;
+    }
+    .option:hover { background: #505050; }
+    .options input:checked + .option {
+      background: #0e639c; color: #fff;
+    }
+    #cmdInput {
+      flex: 1;
+      background: transparent;
+      border: none; outline: none;
+      color: #eee; font-size: 1rem;
+      padding: 8px; caret-color: #0e639c;
+    }
+    #cmdInput::placeholder { color: #777; }
+    @media (max-width: 600px) {
+      .options { display: none; }
+      .input-area { padding: 0 5px; }
+    }
+  </style>
+
+  <!-- UMD-библиотеки -->
+  <script src="https://cdn.jsdelivr.net/npm/helia@3.0.0/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@helia/unixfs@2.0.0/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/datastore-core@9.0.3/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/blockstore-core@4.1.0/dist/index.min.js"></script>
+</head>
+<body>
+  <div class="terminal">
+    <div class="indicators" id="indicators">
+      <canvas id="connections"></canvas>
+    </div>
+
+    <div class="output" id="output"></div>
+
+    <div class="input-area">
+      <div class="options left">
+        <label><input type="radio" name="left" value="dna"><span class="option">DNA</span></label>
+        <label><input type="radio" name="left" value="text"><span class="option">TEXT</span></label>
+        <label><input type="radio" name="left" value="save"><span class="option">SAVE</span></label>
+        <label><input type="radio" name="left" value="load"><span class="option">LOAD</span></label>
+        <label><input type="radio" name="left" value="help"><span class="option">HELP</span></label>
+      </div>
+      <input id="cmdInput" type="text" placeholder="Введите команду…"/>
+      <div class="options right">
+        <label><input type="radio" name="right" value="node"><span class="option">NODE</span></label>
+        <label><input type="radio" name="right" value="upload"><span class="option">UPLD</span></label>
+        <label><input type="radio" name="right" value="cat"><span class="option">CAT</span></label>
+        <label><input type="radio" name="right" value="ls"><span class="option">LS</span></label>
+        <label><input type="radio" name="right" value="exit"><span class="option">EXIT</span></label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Скрытый input для загрузки файлов -->
+  <input type="file" id="fileInput" style="display:none"/>
+
+  <script>
+  (async()=>{
+    const outputEl = document.getElementById('output');
+    const indEl    = document.getElementById('indicators');
+    const can      = document.getElementById('connections');
+    const ctx      = can.getContext('2d');
+    const inputEl  = document.getElementById('cmdInput');
+    const fileIn   = document.getElementById('fileInput');
+
+    // Подстройка canvas под контейнер
+    function resizeCanvas(){
+      can.width = indEl.clientWidth;
+      can.height= indEl.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // peers и их индикаторы
+    const peers = {};
+
+    function writeLine(text=''){
+      const div = document.createElement('div');
+      div.className = 'line';
+      div.textContent = text;
+      outputEl.appendChild(div);
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    // равномерная раскладка узлов
+    function layoutNodes(){
+      const ids = Object.keys(peers);
+      const n = ids.length;
+      const cols = Math.ceil(Math.sqrt(n));
+      const rows = Math.ceil(n/cols);
+      ids.forEach((id,i)=>{
+        const col = i % cols, row = Math.floor(i/cols);
+        peers[id].node.style.left = ((col+0.5)/cols*100) + '%';
+        peers[id].node.style.top  = ((row+0.5)/rows*100) + '%';
+      });
+      drawConnections();
+    }
+
+    function addPeerIndicator(id){
+      if(peers[id]) return;
+      const node = document.createElement('div');
+      node.className = 'node';
+      const dot  = document.createElement('div'); dot.className = 'dot';
+      const info = document.createElement('div'); info.className = 'info';
+      info.innerHTML = `ID:${id.slice(0,6)}<br>status:disc<br>lat:—ms`;
+      node.append(dot, info);
+      indEl.append(node);
+      peers[id] = {node,dot,info,lat:0};
+      layoutNodes();
+    }
+    function updatePeerIndicator(id, status){
+      const p = peers[id]; if(!p) return;
+      const color = status==='connected'? '#2ecc71' : '#f1c40f';
+      p.dot.style.background = color;
+      p.lat = status==='connected'? (20+Math.random()*100|0) : 0;
+      p.info.innerHTML = `ID:${id.slice(0,6)}<br>status:${status.slice(0,4)}<br>lat:${p.lat}ms`;
+      drawConnections();
+    }
+    function removePeerIndicator(id){
+      const p = peers[id]; if(!p) return;
+      indEl.removeChild(p.node);
+      delete peers[id];
+      layoutNodes();
+    }
+
+    // визуальные соединения
+    function drawConnections(){
+      ctx.clearRect(0,0,can.width,can.height);
+      const ids = Object.keys(peers);
+      for(let i=0;i<ids.length;i++){
+        for(let j=i+1;j<ids.length;j++){
+          const a = peers[ids[i]].node, b = peers[ids[j]].node;
+          const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+          const ax = ra.left+ra.width/2 - indEl.getBoundingClientRect().left;
+          const ay = ra.top +ra.height/2 - indEl.getBoundingClientRect().top;
+          const bx = rb.left+rb.width/2 - indEl.getBoundingClientRect().left;
+          const by = rb.top +rb.height/2 - indEl.getBoundingClientRect().top;
+          const dist = Math.hypot(ax-bx, ay-by);
+          if(dist<200){
+            ctx.strokeStyle = 'rgba(100,200,250,'+ (1-dist/200)*0.2 +')';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+          }
+        }
+      }
+    }
+
+    // обработка команд
+    inputEl.addEventListener('keydown', async e=>{
+      if(e.key!=='Enter') return;
+      const line = inputEl.value.trim(); if(!line) return;
+      writeLine('> '+line);
+      inputEl.value = '';
+      const [cmd, arg] = line.split(' ');
+      switch(cmd){
+        case 'help':
+          writeLine('help — список команд');
+          writeLine('encode <text>   — текст→DNA');
+          writeLine('decode <dna>    — DNA→текст');
+          writeLine('node start/stop — управление узлом');
+          writeLine('peers           — показать кол-во пиров');
+          writeLine('upload          — загрузить файл');
+          writeLine('cat <cid>       — получить файл');
+          writeLine('clear           — очистить экран');
+          break;
+        case 'encode':
+          if(arg) writeLine(
+            [...new TextEncoder().encode(arg)]
+            .map(b=>b.toString(2).padStart(8,'0')
+              .match(/.{1,2}/g).map(p=>({'00':'A','01':'C','10':'G','11':'T'}[p])).join(''))
+            .join('')
+          );
+          else writeLine('Исп: encode <text>');
+          break;
+        case 'decode':
+          if(arg){
+            const bits = arg.split('').map(n=>({'A':'00','C':'01','G':'10','T':'11'}[n]||'')).join('');
+            const txt = new TextDecoder().decode(
+              new Uint8Array(bits.match(/.{1,8}/g).map(b=>parseInt(b,2)))
+            );
+            writeLine(txt);
+          } else writeLine('Исп: decode <dna>');
+          break;
+        case 'clear':
+          outputEl.innerHTML=''; break;
+        case 'node':
+          if(arg==='start'){
+            writeLine('Запуск узла…');
+            const { createHelia }      = Helia;
+            const { unixfs }           = HeliaUnixfs;
+            const { MemoryDatastore }  = DatastoreCore;
+            const { MemoryBlockstore } = BlockstoreCore;
+            const ds = new MemoryDatastore();
+            const bs = new MemoryBlockstore();
+            const nodeObj = await createHelia({ datastore: ds, blockstore: bs });
+            fs = await unixfs(nodeObj);
+            writeLine('Узел запущен');
+            nodeObj.libp2p.addEventListener('peer:discovery', e=>{
+              addPeerIndicator(e.detail.id.toString());
+            });
+            nodeObj.libp2p.addEventListener('peer:connect', e=>{
+              updatePeerIndicator(e.detail.id.toString(),'connected');
+            });
+            nodeObj.libp2p.addEventListener('peer:disconnect', e=>{
+              updatePeerIndicator(e.detail.id.toString(),'disc');
+              setTimeout(()=> removePeerIndicator(e.detail.id.toString()),3000);
+            });
+          } else if(arg==='stop'){
+            writeLine('Остановка узла…');
+            Object.keys(peers).forEach(removePeerIndicator);
+            writeLine('Узел остановлен');
+          } else writeLine('Исп: node <start|stop>');
+          break;
+        case 'peers':
+          writeLine(`Peers: ${Object.keys(peers).length}`); break;
+        case 'upload':
+          fileIn.click(); break;
+        case 'cat':
+          if(!arg) { writeLine('Исп: cat <cid>'); break; }
+          if(!fs) { writeLine('Узел не запущен'); break; }
+          // retrieve file
+          (async()=>{
+            const chunks=[]; for await(const c of fs.cat(arg)) chunks.push(c);
+            const mime = localStorage.getItem('mime_'+arg) || 'application/octet-stream';
+            if(mime.startsWith('text/')){
+              const text = new TextDecoder().decode(new Uint8Array(chunks.flat()));
+              writeLine(text);
+            } else {
+              const blob = new Blob(chunks, { type: mime });
+              const url = URL.createObjectURL(blob);
+              writeLine(`Файл CID: ${arg}`);
+              writeLine(`Ссылка: ${url}`);
+            }
+          })();
+          break;
+        default:
+          writeLine(`Неизвестная команда: ${cmd}`);
+      }
+    });
+
+    // обработка загрузки
+    fileIn.addEventListener('change', async ()=>{
+      const f = fileIn.files[0];
+      if(!f) return;
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const cid = await fs.addBytes(bytes);
+      localStorage.setItem('mime_'+cid, f.type);
+      writeLine(`Загружен: ${cid}`);
+      fileIn.value = '';
+    });
+
+    writeLine('Терминал запущен, введите "help".');
+  })();
+  </script>
+</body>
+</html>
