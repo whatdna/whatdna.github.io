@@ -1,13 +1,42 @@
-<html>
- <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-   <link href="https://rosagro-tech.github.io/fonts/eth2/stylesheet.css" rel="stylesheet">
-    </head>
-     <body style="background:#464646;font-family:'CocoBikeR';">
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ДНК Шифратор + Helia</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Распределённое Хранилище Информации в Виде ДНК</h1>
+  </header>
+  <main>
+    <section id="dna-section"></section>
+    <section id="helia-section">
+      <h2>Распределённый реестр</h2>
+      <div class="controls">
+        <button id="startNode">Нода</button>
+        <button id="stopNode">Stop Node</button>
+      </div>
+      <div id="status">Статус: Offline</div>
 
-    <br><br><br>
+      <h3>Upload & Preview</h3>
+      <input type="file" id="fileInput" />
+      <button id="uploadBtn">Upload</button>
+      <p>CID: <span id="cidOutput">N/A</span></p>
+      <div id="preview"></div>
 
-  <center> <h1 style="color:white;font-size:10em;">кто ты</h1> </center>
-  <center> <h1 style="color:white;font-size:5em;">генетически</h1> </center>
- </body>
+      <h3>Retrieve by CID</h3>
+      <input type="text" id="cidInput" placeholder="Введите CID" />
+      <button id="retrieveBtn">Retrieve</button>
+      <div id="retrievedContent"></div>
+
+      <h3>List Directory</h3>
+      <input type="text" id="dirCidInput" placeholder="Введите CID директории" />
+      <button id="listBtn">List</button>
+      <ul id="listOutput"></ul>
+    </section>
+  </main>
+  <script type="module" src="js/main.js"></script>
+</body>
 </html>
