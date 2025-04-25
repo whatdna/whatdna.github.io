@@ -60,6 +60,82 @@
     <script src="https://cdn.jsdelivr.net/npm/@libp2p/bootstrap@^10.0.0/dist/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/blockstore-core@^4.0.0/dist/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/datastore-core@^9.0.0/dist/index.min.js"></script>
-    <script type="module" src="Js/main.js"></script>
+    <script>
+let helia, unixfs;
+const statusEl = document.getElementById('status');
+
+async function start() {
+  statusEl.textContent = 'Starting...';
+  ({ helia, unixfs } = await initHelia([/* bootstrap peers */]));
+  statusEl.textContent = 'Online';
+}
+function stop() { statusEl.textContent = 'Offline'; }
+
+// UI Bindings
+document.getElementById('startNode').onclick = start;
+document.getElementById('stopNode').onclick = stop;
+
+const fileInput = document.getElementById('fileInput');
+const previewEl = document.getElementById('preview');
+fileInput.onchange = () => previewLocalFile(fileInput.files[0], previewEl);
+
+// Upload
+const cidOutput = document.getElementById('cidOutput');
+document.getElementById('uploadBtn').onclick = async () => {
+  const cid = await addFile(unixfs, fileInput.files[0]);
+  cidOutput.textContent = cid;
+};
+
+// Retrieve
+const cidInput = document.getElementById('cidInput');
+const retrieveEl = document.getElementById('retrievedContent');
+document.getElementById('retrieveBtn').onclick = async () => {
+  retrieveEl.textContent = await catFile(unixfs, cidInput.value);
+};
+
+// List
+const dirInput = document.getElementById('dirCidInput');
+const listEl = document.getElementById('listOutput');
+document.getElementById('listBtn').onclick = async () => {
+  listEl.innerHTML = '';
+  const items = await listDir(unixfs, dirInput.value);
+  items.forEach(i => listEl.innerHTML += `<li>${i.name}: ${i.cid}</li>`);
+};
+    </script>
+
+   <script>
+export function previewLocalFile(file, container) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    container.innerHTML = '';
+    const url = e.target.result;
+    if (file.type.startsWith('image/')) container.innerHTML = `<img src="${url}" />`;
+    else if (file.type.startsWith('video/')) container.innerHTML = `<video controls src="${url}"></video>`;
+    else if (file.type.startsWith('audio/')) container.innerHTML = `<audio controls src="${url}"></audio>`;
+    else container.textContent = 'Preview not supported';
+  };
+  reader.readAsDataURL(file);
+}
+
+export async function addFile(unixfs, file) {
+  const array = new Uint8Array(await file.arrayBuffer());
+  const { cid } = await unixfs.addBytes(array);
+  return cid.toString();
+}
+
+export async function catFile(unixfs, cid) {
+  let content = '';
+  const decoder = new TextDecoder();
+  for await (const chunk of unixfs.cat(cid)) content += decoder.decode(chunk, { stream: true });
+  return content;
+}
+
+export async function listDir(unixfs, cid) {
+  const entries = [];
+  for await (const entry of unixfs.ls(cid)) entries.push({ name: entry.name, cid: entry.cid.toString() });
+  return entries;
+}
+</script>
+
 </body>
 </html>
