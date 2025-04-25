@@ -1,7 +1,7 @@
 // Импортируем именованные функции из Helia и UnixFS
 import { createHelia } from 'https://cdn.jsdelivr.net/npm/helia@^3.0.0/dist/index.min.js';
 import { unixfs } from 'https://cdn.jsdelivr.net/npm/@helia/unixfs@^5.0.0/dist/index.min.js';
-import { MemoryDatastore } from 'https://cdn.jsdelivr.net/npm/datastore-core@^9.0.0/dist/index.min.js';
+import { memoryDatastore } from 'https://cdn.jsdelivr.net/npm/datastore-core@^9.0.0/dist/index.min.js';
 import { memoryBlockstore } from 'https://cdn.jsdelivr.net/npm/blockstore-core@^4.0.0/dist/index.min.js';
 
 /**
