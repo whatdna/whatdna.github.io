@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ДНК-Шифратор & Распределённое Хранилище</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:#151b23; --fg:#fff;
+      --card-bg:#1f2937;
+      --accent:#3498db; --accent2:#2ecc71;
+      --accent3:#f1c40f; --accent4:#9b59b6; --accent5:#e74c3c;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;padding:0;font-family:'Roboto Mono',monospace;background:var(--bg);color:var(--fg);}
+    header{background:var(--card-bg);text-align:center;padding:20px;font-size:1.5rem;border-bottom:1px solid #333;}
+    .container{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:20px;}
+    .card{background:var(--card-bg);border-radius:8px;padding:20px;
+      box-shadow:0 4px 6px rgba(0,0,0,0.5);transition:transform .2s,box-shadow .2s;}
+    .card:hover{transform:translateY(-4px);box-shadow:0 6px 10px rgba(0,0,0,0.7);}
+    h2{margin-top:0;color:var(--accent);}
+    textarea,input,button{font-family:'Roboto Mono',monospace;font-size:1rem;}
+    textarea,input{width:100%;background:#1f2937;border:1px solid #333;color:#fff;
+      padding:8px;border-radius:4px;margin-bottom:10px;}
+    button{background:var(--accent);border:none;color:#fff;padding:10px 16px;
+      border-radius:4px;cursor:pointer;transition:background .2s;margin-right:8px;}
+    button:hover{background:var(--accent2);}
+    button:disabled{background:#555;cursor:not-allowed;}
+    .btn-secondary{background:var(--accent4);}
+    .btn-secondary:hover{background:var(--accent3);}
+    .status-list{list-style:none;padding:0;margin:0 0 10px;}
+    .status-list li{margin-bottom:6px;}
+    #filePreview img,#filePreview video,#filePreview audio{max-width:100%;margin-top:10px;border-radius:4px;}
+    pre{background:#11171f;padding:10px;border-radius:4px;overflow-x:auto;}
+  </style>
+</head>
+<body>
+  <header>ДНК-Шифратор & Распределённое Хранилище (Helia)</header>
+  <div class="container">
+    <!-- 1. DNA-шифратор -->
+    <section class="card">
+      <h2>1. Шифратор ↔ ДНК</h2>
+      <textarea id="inputText" rows="4" placeholder="Введите текст..."></textarea>
+      <div id="byteCounter">Байты: 0/1024</div>
+      <button id="btnEncode">Кодировать</button>
+      <button id="btnDecode" class="btn-secondary">Декодировать</button>
+      <textarea id="outputDNA" rows="4" placeholder="Последовательность ДНК..."></textarea>
+      <textarea id="outputText" rows="2" placeholder="Расшифрованный текст..."></textarea>
+    </section>
+
+    <!-- 2. Helia-хранилище -->
+    <section class="card">
+      <h2>2. Распределённое Хранилище</h2>
+      <button id="btnStart">Запустить узел</button>
+      <button id="btnStop" class="btn-secondary">Остановить узел</button>
+      <ul class="status-list">
+        <li>Статус узла: <strong id="statusValue">Offline</strong></li>
+        <li>ID узла: <strong id="nodeId">—</strong></li>
+        <li>Найдено пиров: <strong id="discoveredCount">0</strong></li>
+        <li>Подключено пиров: <strong id="connectedCount">0</strong></li>
+      </ul>
+      <h3>Загрузка файла</h3>
+      <input type="file" id="fileInput"/>
+      <div id="filePreview">Предпросмотр...</div>
+      <button id="btnUpload">Загрузить файл</button>
+      <p>CID загруженного: <code id="uploadedCid">—</code></p>
+      <h3>Получить по CID</h3>
+      <input id="cidInput" placeholder="Введите CID"/>
+      <button id="btnRetrieve">Получить содержимое</button>
+      <pre id="retrievedContent">—</pre>
+      <h3>Листинг каталога</h3>
+      <input id="dirCidInput" placeholder="CID каталога"/>
+      <button id="btnList">Показать список</button>
+      <ul id="listOutput"></ul>
+    </section>
+  </div>
+
+  <!-- UMD-скрипты Helia и зависимости -->
+  <script src="https://unpkg.com/helia/dist/index.min.js"></script>           <!-- Helia → Helia.createHelia :contentReference[oaicite:1]{index=1} -->
+  <script src="https://unpkg.com/@helia/unixfs/dist/index.min.js"></script>
+  <script src="https://unpkg.com/datastore-core/dist/index.min.js"></script>
+  <script src="https://unpkg.com/blockstore-core/dist/index.min.js"></script>  <!-- BlockstoreCore → MemoryBlockstore :contentReference[oaicite:2]{index=2} -->
+
+  <script>
+  (async()=>{
+    // --- DNA: 2 бита → нуклеотид и обратно ---
+    const dnaMap = {'00':'A','01':'C','10':'G','11':'T'};
+    const revMap = {A:'00',C:'01',G:'10',T:'11'};
+    function encodeTextToDNA(text){
+      const bytes=new TextEncoder().encode(text);
+      let dna='';
+      bytes.forEach(b=>{
+        const bin=b.toString(2).padStart(8,'0');
+        for(let i=0;i<8;i+=2) dna+=dnaMap[bin.slice(i,i+2)];
+      });
+      return dna;
+    }
+    function decodeDNAToText(dna){
+      let bits=''; dna.split('').forEach(n=>bits+=revMap[n]||'');
+      const arr=bits.match(/.{1,8}/g).map(b=>parseInt(b,2));
+      return new TextDecoder().decode(new Uint8Array(arr));
+    }
+    // --- DOM DNA ---
+    const it=document.getElementById.bind(document);
+    const inT=it('inputText'), outD=it('outputDNA'), outT=it('outputText');
+    const bc=it('byteCounter'), eB=it('btnEncode'), dB=it('btnDecode');
+    inT.addEventListener('input',()=>{
+      const l=new TextEncoder().encode(inT.value).length;
+      bc.textContent=`Байты: ${l}/1024`;
+      eB.disabled = l>1024;
+      bc.style.color = l>1024?'var(--accent5)':'';
+    });
+    eB.addEventListener('click',()=>{ if(inT.value) outD.value=encodeTextToDNA(inT.value); });
+    dB.addEventListener('click',()=>{ if(outD.value) outT.value=decodeDNAToText(outD.value); });
+
+    // --- Helia Node + UnixFS ---
+    const { createHelia } = Helia;
+    const { unixfs }      = HeliaUnixfs;
+    const { MemoryDatastore } = DatastoreCore;
+    const { MemoryBlockstore } = BlockstoreCore; // ← вместо memoryBlockstore() :contentReference[oaicite:3]{index=3}
+
+    let helia, fs, discovered=new Set();
+
+    // --- DOM Helia ---
+    const sV=it('statusValue'), nId=it('nodeId');
+    const dC=it('discoveredCount'), cC=it('connectedCount');
+    const fI=it('fileInput'), fP=it('filePreview');
+    const uC=it('uploadedCid'), cIn=it('cidInput'), rC=it('retrievedContent');
+    const dIn=it('dirCidInput'), lO=it('listOutput');
+
+    async function initNode(){
+      sV.textContent='Запуск...';
+      const ds=new MemoryDatastore();
+      const bs=new MemoryBlockstore();                  // ← здесь
+      helia = await createHelia({ datastore: ds, blockstore: bs });
+      fs = await unixfs(helia);
+      nId.textContent = await helia.libp2p.peerId.toString();
+      sV.textContent='Online';
+      helia.libp2p.addEventListener('peer:discovery',e=>{discovered.add(e.detail.id.toString()); updatePeers();});
+      helia.libp2p.addEventListener('peer:connect',()=>updatePeers());
+      setInterval(updatePeers,1000);
+    }
+    function updatePeers(){
+      cC.textContent = helia?.libp2p.getPeers().length||0;
+      dC.textContent = discovered.size;
+    }
+    it('btnStart').addEventListener('click',initNode);
+    it('btnStop').addEventListener('click',()=>{ helia?.libp2p.stop(); sV.textContent='Offline'; });
+
+    // --- File Preview ---
+    fI.addEventListener('change',()=>{
+      const file=fI.files[0]; if(!file) return fP.innerHTML='Нет файла';
+      const r=new FileReader();
+      r.onload=e=>{
+        const u=e.target.result;
+        fP.innerHTML = file.type.startsWith('image/') 
+          ? `<img src="${u}">` 
+          : file.type.startsWith('video/') 
+            ? `<video controls src="${u}"></video>`
+            : file.type.startsWith('audio/') 
+              ? `<audio controls src="${u}"></audio>`
+              : `<pre>Предпросмотр недоступен</pre>`;
+      };
+      r.readAsDataURL(file);
+    });
+
+    // --- Upload ---
+    it('btnUpload').addEventListener('click',async()=>{
+      if(!fs) return alert('Сначала запустите узел');
+      const file=fI.files[0]; if(!file) return alert('Выберите файл');
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      const cid=await fs.addBytes(bytes);
+      uC.textContent=cid.toString();
+    });
+
+    // --- Retrieve ---
+    it('btnRetrieve').addEventListener('click',async()=>{
+      if(!fs) return alert('Узел не запущен');
+      const cid=cIn.value.trim(); if(!cid) return;
+      let res='', dec=new TextDecoder();
+      for await(const ch of fs.cat(cid)) res+=dec.decode(ch,{stream:true});
+      rC.textContent = res + dec.decode();
+    });
+
+    // --- List Dir ---
+    it('btnList').addEventListener('click',async()=>{
+      if(!fs) return alert('Узел не запущен');
+      const cid=dIn.value.trim(); if(!cid) return;
+      lO.innerHTML='';
+      for await(const e of fs.ls(cid)) lO.innerHTML+=`<li>${e.name}: ${e.cid}</li>`;
+    });
+  })();
+  </script>
+</body>
+</html>
