@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ДНК Шифратор & Распределённое Хранилище</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="header">
+    <h1>ДНК Шифратор & Распределённое Хранилище (Helia)</h1>
+  </header>
+
+  <main class="container">
+    <!-- Блок Шифратор/Дешифратор -->
+    <section class="card">
+      <h2>1. Шифратор ↔ ДНК</h2>
+      <textarea id="user-input" placeholder="Введите текст для шифрования..."></textarea>
+      <div class="text-counter">Байты: 0 / 1024</div>
+      <button id="encodeButton" class="btn">Сгенерировать ДНК</button>
+      <textarea id="dna-output" readonly placeholder="Здесь появится ДНК-последовательность..."></textarea>
+      <button id="decodeButton" class="btn">Расшифровать из ДНК</button>
+      <textarea id="decoded-text" readonly placeholder="Расшифрованный текст..."></textarea>
+    </section>
+
+    <!-- Блок Helia -->
+    <section class="card">
+      <h2>2. Распределённое Хранилище</h2>
+      <div class="controls">
+        <button id="startNode" class="btn">Запустить Узел</button>
+        <button id="stopNode" class="btn">Остановить Узел</button>
+      </div>
+      <p>Статус: <span id="status">Offline</span></p>
+
+      <h3>Загрузить и Предпросмотр</h3>
+      <input type="file" id="fileInput">
+      <button id="uploadBtn" class="btn">Загрузить Файл</button>
+      <p>CID: <span id="cidOutput">—</span></p>
+      <div id="preview" class="preview"></div>
+
+      <h3>Получить по CID</h3>
+      <input type="text" id="cidInput" placeholder="Введите CID">
+      <button id="retrieveBtn" class="btn">Получить Контент</button>
+      <pre id="retrievedContent" class="preview">—</pre>
+
+      <h3>Список Директории</h3>
+      <input type="text" id="dirCidInput" placeholder="CID директории">
+      <button id="listBtn" class="btn">Показать Содержимое</button>
+      <ul id="listOutput" class="preview-list"></ul>
+    </section>
+  </main>
+
+  <script type="module" src="Js/main.js"></script>
+</body>
+</html>
