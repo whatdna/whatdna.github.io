@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Терминал — Распределённое Хранилище Для Информации в Виде ДНК</title>
+  <style>
+    /* Убираем скроллбары */
+    ::-webkit-scrollbar { width: 0; height: 0; }
+
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: #1e1e1e;
+      color: #ccc;
+      font-family: Menlo, Consolas, monospace;
+      overflow: hidden;
+    }
+    .terminal {
+      display: flex; flex-direction: column;
+      height: 100%;
+      padding-bottom: 60px; /* под input-area */
+    }
+    .output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      line-height: 1.4;
+    }
+    .output .line {
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 2px 0;
+    }
+    .input-area {
+      position: fixed;
+      bottom: 0; left: 0;
+      width: 100%; height: 60px;
+      background: #252526;
+      display: flex; align-items: center;
+      padding: 0 10px;
+      box-shadow: 0px 1px 1px 0px rgba(0,0,0,0.5);
+    }
+    .options {
+      display: flex; gap: 6px;
+      height: 100%;
+    }
+    .options.left  { margin-right: 1.25%; }
+    .options.right { margin-left: 1.25%; }
+    .options label {
+      position: relative;
+      display: inline-block;
+      height: 100%;
+    }
+    .options input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .option {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 0 12px;
+      border-radius: 4px;
+      background: #3c3c3c;
+      color: #ccc;
+      cursor: pointer;
+      transition: background .2s, color .2s;
+      font-size: 0.9rem;
+    }
+    .option:hover {
+      background: #505050;
+    }
+    .options input:checked + .option {
+      background: #0e639c;
+      color: #fff;
+    }
+    #cmdInput {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #eee;
+      font-size: 1rem;
+      padding: 8px;
+      caret-color: #0e639c;
+    }
+    #cmdInput::placeholder {
+      color: #777;
+    }
+    @media (max-width: 600px) {
+      .options { display: none; }
+      .input-area { padding: 0 5px; }
+    }
+  </style>
+
+  <!-- Helia UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/helia@3.0.0/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@helia/unixfs@2.0.0/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/datastore-core@9.0.3/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/blockstore-core@4.1.0/dist/index.min.js"></script>
+</head>
+<body>
+  <div class="terminal">
+    <div class="output" id="output"></div>
+
+    <div class="input-area">
+      <!-- Левые селекты -->
+      <div class="options left">
+        <label><input type="radio" name="left" value="dna"><span class="option">DNA</span></label>
+        <label><input type="radio" name="left" value="text"><span class="option">TEXT</span></label>
+        <label><input type="radio" name="left" value="save"><span class="option">SAVE</span></label>
+        <label><input type="radio" name="left" value="load"><span class="option">LOAD</span></label>
+        <label><input type="radio" name="left" value="help"><span class="option">HELP</span></label>
+      </div>
+
+      <!-- Поле ввода -->
+      <input id="cmdInput" type="text" placeholder="Введите команду…"/>
+
+      <!-- Правые селекты -->
+      <div class="options right">
+        <label><input type="radio" name="right" value="node"><span class="option">NODE</span></label>
+        <label><input type="radio" name="right" value="upload"><span class="option">UPLD</span></label>
+        <label><input type="radio" name="right" value="cat"><span class="option">CAT</span></label>
+        <label><input type="radio" name="right" value="ls"><span class="option">LS</span></label>
+        <label><input type="radio" name="right" value="exit"><span class="option">EXIT</span></label>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const outputEl = document.getElementById('output');
+    const inputEl  = document.getElementById('cmdInput');
+
+    // Helia vars
+    let helia, fs;
+    const discovered = new Set();
+    const connected  = new Set();
+
+    // Вывод строки
+    function writeLine(text='') {
+      const div = document.createElement('div');
+      div.className = 'line';
+      div.textContent = text;
+      outputEl.appendChild(div);
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    // Помощь
+    const helpText = [
+      'Доступные команды:',
+      '  help                        — показать эту подсказку',
+      '  encode <text>               — кодировать текст в ДНК',
+      '  decode <dna>                — декодировать ДНК в текст',
+      '  node start                  — запустить Helia-узел',
+      '  node stop                   — остановить узел',
+      '  node peers                  — показать информацию о пирах',
+      '  clear                       — очистить экран'
+    ];
+
+    // Обработчик ввода
+    inputEl.addEventListener('keydown', async e => {
+      if (e.key !== 'Enter') return;
+      const full = inputEl.value.trim();
+      if (!full) return;
+      writeLine('> ' + full);
+      inputEl.value = '';
+
+      const [cmd, ...rest] = full.split(' ');
+      const arg = rest.join(' ');
+
+      switch (cmd.toLowerCase()) {
+        case 'help':
+          helpText.forEach(line => writeLine(line));
+          break;
+
+        case 'encode':
+          if (arg) {
+            const dna = [...new TextEncoder().encode(arg)]
+              .map(b=>b.toString(2).padStart(8,'0')
+                .match(/.{1,2}/g)
+                .map(p=>({'00':'A','01':'C','10':'G','11':'T'}[p])).join(''))
+              .join('');
+            writeLine(dna);
+          } else writeLine('Использование: encode <text>');
+          break;
+
+        case 'decode':
+          if (arg) {
+            const bits = arg.split('').map(n=>({'A':'00','C':'01','G':'10','T':'11'}[n]||'')).join('');
+            const bytes = new Uint8Array(bits.match(/.{1,8}/g).map(b=>parseInt(b,2)));
+            const txt = new TextDecoder().decode(bytes);
+            writeLine(txt);
+          } else writeLine('Использование: decode <dna>');
+          break;
+
+        case 'clear':
+          outputEl.innerHTML = '';
+          break;
+
+        case 'node':
+          if (arg === 'start') {
+            writeLine('Запуск Helia-узла…');
+            const { createHelia }      = Helia;
+            const { unixfs }           = HeliaUnixfs;
+            const { MemoryDatastore }  = DatastoreCore;
+            const { MemoryBlockstore } = BlockstoreCore;
+            const ds = new MemoryDatastore();
+            const bs = new MemoryBlockstore();
+            helia = await createHelia({ datastore: ds, blockstore: bs });
+            fs    = await unixfs(helia);
+            writeLine('Узел запущен, ID: ' + await helia.libp2p.peerId.toString());
+            helia.libp2p.addEventListener('peer:discovery', e=>{
+              discovered.add(e.detail.id.toString());
+              writeLine('Peer discovered: ' + e.detail.id.toString());
+            });
+            helia.libp2p.addEventListener('peer:connect', e=>{
+              connected.add(e.detail.toString());
+              writeLine('Peer connected: ' + e.detail.toString());
+            });
+          }
+          else if (arg === 'stop') {
+            helia && helia.libp2p.stop();
+            writeLine('Узел остановлен');
+          }
+          else if (arg === 'peers') {
+            writeLine(`Discovered: ${discovered.size}, Connected: ${connected.size}`);
+            if (discovered.size) {
+              writeLine('Список найденных пиров:');
+              discovered.forEach(id=> writeLine('  ' + id));
+            }
+          }
+          else {
+            writeLine('Использование: node <start|stop|peers>');
+          }
+          break;
+
+        default:
+          writeLine(`Неизвестная команда: ${cmd}`);
+      }
+    });
+
+    // Приветствие
+    writeLine('Распределённое Хранилище Для Информации в Виде ДНК — Терминал');
+    writeLine('Введите "help" для списка команд.');
+  </script>
+</body>
+</html>
