@@ -100,7 +100,7 @@
 <body>
   <header>Распределённое Хранилище Для Информации в Виде ДНК</header>
   <div class="container">
-    <!-- Карточка 1: ДНК-шифратор -->
+    <!-- 1. Шифратор -->
     <section class="card">
       <h2>1. Шифратор ↔ ДНК</h2>
       <textarea id="inputText" rows="3" placeholder="Введите текст..."></textarea>
@@ -109,13 +109,14 @@
       <button id="btnDecode" class="btn-secondary">Декодировать</button>
       <textarea id="outputDNA" rows="3" placeholder="Последовательность ДНК..." readonly></textarea>
       <textarea id="outputText" rows="2" placeholder="Расшифрованный текст..." readonly></textarea>
+
       <h3>Сохранить текст или ДНК</h3>
       <textarea id="textInput" rows="2" placeholder="Текст или ДНК для сохранения"></textarea>
       <button id="btnSaveText">Сохранить</button>
       <p>CID сохранённого: <code id="textCid">—</code></p>
     </section>
 
-    <!-- Карточка 2: Helia-Хранилище -->
+    <!-- 2. Helia-Хранилище -->
     <section class="card">
       <h2>2. Распределённое Хранилище</h2>
       <button id="btnStart">Запустить узел</button>
@@ -147,32 +148,29 @@
 
   <!-- UMD-библиотеки -->
   <script src="https://cdn.jsdelivr.net/npm/helia@3.0.0/dist/index.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@helia/unixfs@5.0.1/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@helia/unixfs@2.0.0/dist/index.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/datastore-core@9.0.3/dist/index.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/blockstore-core@4.1.0/dist/index.min.js"></script>
 
   <script>
   (async()=>{
-    // ——— DNA-функции —————————————————
+    // — DNA-функции —
     const map2 = {'00':'A','01':'C','10':'G','11':'T'};
     const rmap = {A:'00',C:'01',G:'10',T:'11'};
-
-    function encodeTextToDNA(text) {
-      let dna = '';
-      new TextEncoder().encode(text).forEach(b=>{
-        const bin = b.toString(2).padStart(8,'0');
-        for(let i=0;i<8;i+=2) dna += map2[bin.slice(i,i+2)];
+    function encodeTextToDNA(t) {
+      let d=''; new TextEncoder().encode(t).forEach(b=>{
+        const bin=b.toString(2).padStart(8,'0');
+        for(let i=0;i<8;i+=2) d+=map2[bin.slice(i,i+2)];
       });
-      return dna;
+      return d;
     }
     function decodeDNAToText(dna) {
-      let bits = '';
-      dna.split('').forEach(n=> bits += rmap[n]||'');
-      const bytes = new Uint8Array(bits.match(/.{1,8}/g).map(b=>parseInt(b,2)));
+      let bits=''; dna.split('').forEach(n=>bits+=rmap[n]||'');
+      const bytes=new Uint8Array(bits.match(/.{1,8}/g).map(b=>parseInt(b,2)));
       return new TextDecoder().decode(bytes);
     }
 
-    // ——— DOM DNA —————————————————————
+    // DOM DNA
     const inputText   = document.getElementById('inputText');
     const byteCounter = document.getElementById('byteCounter');
     const btnEncode   = document.getElementById('btnEncode');
@@ -184,39 +182,31 @@
     const textCid     = document.getElementById('textCid');
 
     inputText.addEventListener('input', ()=>{
-      const len = new TextEncoder().encode(inputText.value).length;
-      byteCounter.textContent = `Байты: ${len}/1024`;
+      const len=new TextEncoder().encode(inputText.value).length;
+      byteCounter.textContent=`Байты: ${len}/1024`;
       btnEncode.disabled = len>1024;
-      byteCounter.style.color = len>1024 ? 'var(--accent5)' : '';
+      byteCounter.style.color = len>1024?'var(--accent5)':'';
     });
+    btnEncode.onclick=()=>{ if(inputText.value) outputDNA.value=encodeTextToDNA(inputText.value); };
+    btnDecode.onclick=()=>{ if(outputDNA.value) outputText.value=decodeDNAToText(outputDNA.value); };
 
-    btnEncode.onclick = ()=>{
-      if(!inputText.value) return;
-      outputDNA.value = encodeTextToDNA(inputText.value);
-    };
-    btnDecode.onclick = ()=>{
-      if(!outputDNA.value) return;
-      outputText.value = decodeDNAToText(outputDNA.value);
-    };
-
-    btnSaveText.onclick = async ()=>{
-      const data = textInput.value;
+    // Сохранение текста/ДНК
+    btnSaveText.onclick=async ()=>{
+      const data = textInput.value.trim();
       if(!data) return alert('Введите текст или ДНК');
-      const bytes = new TextEncoder().encode(data);
-      const cid = await fs.addBytes(bytes);
-      // сохраняем тип и MIME
-      localStorage.setItem(`type_${cid}`, 'text');
+      const bytes=new TextEncoder().encode(data);
+      const cid=await fs.addBytes(bytes);
       localStorage.setItem(`mime_${cid}`, 'text/plain');
       textCid.textContent = cid;
     };
 
-    // ——— Helia-узел ———————————————————
+    // — Helia-узел —
     const { createHelia }      = Helia;
-    const { unixfs }           = HeliaUnixfs;
+    const { unixfs }           = HeliaUnixfs;    // теперь определён!
     const { MemoryDatastore }  = DatastoreCore;
     const { MemoryBlockstore } = BlockstoreCore;
 
-    let helia, fs, discovered = new Set();
+    let helia, fs, discovered=new Set();
 
     // DOM Helia
     const btnStart       = document.getElementById('btnStart');
@@ -237,100 +227,75 @@
     const listOutput     = document.getElementById('listOutput');
 
     async function initNode(){
-      statusValue.textContent = 'Запуск...';
-      const ds = new MemoryDatastore();
-      const bs = new MemoryBlockstore();
+      statusValue.textContent='Запуск...';
+      const ds=new MemoryDatastore();
+      const bs=new MemoryBlockstore();
       helia = await createHelia({ datastore: ds, blockstore: bs });
       fs    = await unixfs(helia);
-
       nodeId.textContent = await helia.libp2p.peerId.toString();
-      statusValue.textContent = 'Online';
-
-      helia.libp2p.addEventListener('peer:discovery', e=>{
-        discovered.add(e.detail.id.toString());
-      });
+      statusValue.textContent='Online';
+      helia.libp2p.addEventListener('peer:discovery', e=>discovered.add(e.detail.id.toString()));
       setInterval(()=>{
         const peers = helia.libp2p.getPeers()||[];
         discoveredCount.textContent = discovered.size;
         connectedCount.textContent = peers.length;
-      }, 1000);
+      },1000);
     }
 
     btnStart.onclick = initNode;
-    btnStop .onclick = ()=>{
-      helia && helia.libp2p.stop();
-      statusValue.textContent = 'Offline';
-    };
+    btnStop .onclick = ()=>{ helia && helia.libp2p.stop(); statusValue.textContent='Offline'; };
 
-    // ——— Предпросмотр файла ———————————————
-    fileInput.onchange = ()=>{
-      const file = fileInput.files[0];
-      if(!file) return filePreview.textContent = 'Нет файла';
-      const reader = new FileReader();
-      reader.onload = e=>{
-        const url = e.target.result;
-        filePreview.innerHTML = '';
-        if(file.type.startsWith('image/'))      filePreview.innerHTML = `<img src="${url}">`;
-        else if(file.type.startsWith('video/')) filePreview.innerHTML = `<video controls src="${url}">`;
-        else if(file.type.startsWith('audio/')) filePreview.innerHTML = `<audio controls src="${url}">`;
-        else                                     filePreview.innerHTML = `<pre>Предпросмотр недоступен</pre>`;
+    // Предпросмотр файла
+    fileInput.onchange=()=>{
+      const f=fileInput.files[0]; if(!f) return filePreview.textContent='Нет файла';
+      const r=new FileReader();
+      r.onload=e=>{
+        const u=e.target.result; filePreview.innerHTML='';
+        if(f.type.startsWith('image/'))      filePreview.innerHTML=`<img src="${u}">`;
+        else if(f.type.startsWith('video/')) filePreview.innerHTML=`<video controls src="${u}">`;
+        else if(f.type.startsWith('audio/')) filePreview.innerHTML=`<audio controls src="${u}">`;
+        else                                  filePreview.innerHTML=`<pre>Нет превью</pre>`;
       };
-      reader.readAsDataURL(file);
+      r.readAsDataURL(f);
     };
 
-    // ——— Загрузка файла —————————————————————
-    btnUpload.onclick = async ()=>{
+    // Загрузка файла
+    btnUpload.onclick=async()=>{
       if(!fs) return alert('Сначала запустите узел');
-      const file = fileInput.files[0];
-      if(!file) return alert('Выберите файл');
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const cid = await fs.addBytes(bytes);
-      uploadedCid.textContent = cid;
-      // сохраняем тип и MIME
-      localStorage.setItem(`type_${cid}`, 'file');
-      localStorage.setItem(`mime_${cid}`, file.type);
+      const f=fileInput.files[0]; if(!f) return alert('Выберите файл');
+      const bytes=new Uint8Array(await f.arrayBuffer());
+      const cid=await fs.addBytes(bytes);
+      uploadedCid.textContent=cid;
+      localStorage.setItem(`mime_${cid}`, f.type);
     };
 
-    // ——— Получение по CID ————————————————————
-    btnRetrieve.onclick = async ()=>{
-      if(!fs) return alert('Узел не запущен');
-      const cid = cidInput.value.trim();
-      if(!cid) return;
-      // читаем все чанки
-      const chunks = [];
+    // Получение по CID (адаптивно под все MIME)
+    btnRetrieve.onclick=async()=>{
+      if(!fs) return alert('Заведите узел');
+      const cid=cidInput.value.trim(); if(!cid) return;
+      const chunks=[];
       for await(const ch of fs.cat(cid)) chunks.push(ch);
-      const type = localStorage.getItem(`type_${cid}`) || 'text';
-      const mime = localStorage.getItem(`mime_${cid}`) || 'text/plain';
-      retrieveResult.innerHTML = '';
-
-      if(type === 'file') {
-        // бинарный файл: создаём Blob и показываем
-        const blob = new Blob(chunks, { type: mime });
-        const url  = URL.createObjectURL(blob);
-        if(mime.startsWith('image/'))      retrieveResult.innerHTML = `<img src="${url}">`;
-        else if(mime.startsWith('video/')) retrieveResult.innerHTML = `<video controls src="${url}"></video>`;
-        else if(mime.startsWith('audio/')) retrieveResult.innerHTML = `<audio controls src="${url}"></audio>`;
-        else {
-          retrieveResult.innerHTML = `<a href="${url}" download="file">Скачать файл</a>`;
-        }
+      const mime=localStorage.getItem(`mime_${cid}`) || 'text/plain';
+      retrieveResult.innerHTML='';
+      if(mime.startsWith('text/')) {
+        const dec=new TextDecoder(), text=chunks.map(c=>dec.decode(c,{stream:true})).join('')+dec.decode();
+        retrieveResult.innerHTML=`<pre>${text}</pre>`;
       } else {
-        // текст или ДНК
-        const dec = new TextDecoder();
-        let text = '';
-        for(const ch of chunks) text += dec.decode(ch, { stream: true });
-        text += dec.decode();
-        retrieveResult.innerHTML = `<pre>${text}</pre>`;
+        const blob=new Blob(chunks,{type:mime}), url=URL.createObjectURL(blob);
+        if(mime.startsWith('image/'))      retrieveResult.innerHTML=`<img src="${url}">`;
+        else if(mime.startsWith('video/')) retrieveResult.innerHTML=`<video controls src="${url}"></video>`;
+        else if(mime.startsWith('audio/')) retrieveResult.innerHTML=`<audio controls src="${url}"></audio>`;
+        else retrieveResult.innerHTML=`<a href="${url}" download>Скачать файл</a>`;
       }
     };
 
-    // ——— Листинг каталога ————————————————————
-    btnList.onclick = async ()=>{
-      if(!fs) return alert('Узел не запущен');
-      const cid = dirCidInput.value.trim();
-      if(!cid) return;
-      listOutput.innerHTML = '';
-      for await(const ent of fs.ls(cid)) {
-        listOutput.innerHTML += `<li>${ent.name}: ${ent.cid}</li>`;
+    // Листинг каталога
+    btnList.onclick=async()=>{
+      if(!fs) return alert('Заведите узел');
+      const cid=dirCidInput.value.trim(); if(!cid) return;
+      listOutput.innerHTML='';
+      for await(const e of fs.ls(cid)) {
+        listOutput.innerHTML+=`<li>${e.name}: ${e.cid}</li>`;
       }
     };
 
