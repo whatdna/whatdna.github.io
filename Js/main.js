@@ -1,4 +1,4 @@
-import { initHelia } from './heliaNode.js';
+import { initHelia } from './node.js';
 import { previewLocalFile, addFile, catFile, listDir } from './fileManager.js';
 
 let helia, unixfs;
