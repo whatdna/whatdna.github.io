@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DNA & Helia Студия</title>
+  <!-- Шрифт Roboto Mono -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #151b23;
+      --fg: #fff;
+      --card: #1f2937;
+      --accent: #2ecc71;
+      --accent-hover: #28b463;
+      --radius: 8px;
+      --font: 'Roboto Mono', monospace;
+    }
+    body {
+      margin:0; padding:0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font);
+    }
+    .header {
+      background: var(--card);
+      padding: 1rem;
+      text-align: center;
+    }
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      padding: 1rem;
+    }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      flex: 1 1 45%;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform .2s;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+    }
+    /* Шифратор ДНК */
+    .dna-card textarea {
+      width: 100%;
+      height: 6rem;
+      background: #1a222d;
+      border: 1px solid #333;
+      border-radius: var(--radius);
+      padding: .5rem;
+      color: var(--fg);
+      resize: vertical;
+      font-family: var(--font);
+    }
+    .controls {
+      display: flex;
+      gap: .5rem;
+      margin: .75rem 0;
+    }
+    .controls button {
+      flex: 1;
+      padding: .75rem;
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      color: var(--fg);
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .controls button:hover {
+      background: var(--accent-hover);
+    }
+    /* Предпросмотр файлов */
+    .preview-container img,
+    .preview-container video,
+    .preview-container audio {
+      max-width: 100%;
+      border-radius: var(--radius);
+    }
+    .preview-container iframe {
+      width: 100%;
+      height: 300px;
+      border: none;
+      border-radius: var(--radius);
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>DNA & Helia Студия</h1>
+  </header>
+  <main class="container">
+    <!-- 1. Шифратор ДНК -->
+    <section class="card dna-card">
+      <h2>1. Шифрование в ДНК</h2>
+      <textarea id="plainText" placeholder="Введите текст…"></textarea>
+      <div class="controls">
+        <button id="encodeBtn">Закодировать →</button>
+        <button id="decodeBtn">← Декодировать</button>
+      </div>
+      <textarea id="dnaText" placeholder="Здесь появится ДНК-цепочка…" readonly></textarea>
+    </section>
+
+    <!-- 2. Распределённое хранилище через Helia/IPFS -->
+    <section class="card">
+      <h2>2. Распределённое хранилище</h2>
+      <div class="controls">
+        <button id="startNodeBtn">Запустить узел</button>
+        <button id="stopNodeBtn">Остановить узел</button>
+      </div>
+      <p>Статус: <span id="status">Offline</span></p>
+      <input type="file" id="fileInput"/>
+      <button id="uploadBtn">Загрузить файл</button>
+      <p>CID: <span id="cidOutput">N/A</span></p>
+      <h3>Предпросмотр</h3>
+      <div class="preview-container" id="preview"></div>
+      <input type="text" id="catCidInput" placeholder="Введите CID для получения"/>
+      <button id="retrieveBtn">Получить содержимое</button>
+      <pre id="retrievedContent">N/A</pre>
+      <input type="text" id="dirCidInput" placeholder="Введите CID каталога"/>
+      <button id="listBtn">Список файлов</button>
+      <ul id="listOutput"></ul>
+    </section>
+  </main>
+
+  <script type="module">
+  // --------------------
+  // dnaEncoder.js
+  // --------------------
+  // Таблица синонимичных кодонов (генетический код)
+  const codonMap = {
+    A:['GCT','GCC','GCA','GCG'], R:['CGT','CGC','CGA','CGG','AGA','AGG'],
+    N:['AAT','AAC'], D:['GAT','GAC'], C:['TGT','TGC'], Q:['CAA','CAG'],
+    E:['GAA','GAG'], G:['GGT','GGC','GGA','GGG'], H:['CAT','CAC'],
+    I:['ATT','ATC','ATA'], L:['TTA','TTG','CTT','CTC','CTA','CTG'],
+    K:['AAA','AAG'], M:['ATG'], F:['TTT','TTC'], P:['CCT','CCC','CCA','CCG'],
+    S:['TCT','TCC','TCA','TCG','AGT','AGC'], T:['ACT','ACC','ACA','ACG'],
+    W:['TGG'], Y:['TAT','TAC'], V:['GTT','GTC','GTA','GTG'], '*':['TAA','TAG','TGA']
+  };
+  // Обратный словарь: кодон → аминокислота
+  const reverseCodonMap = Object.entries(codonMap)
+    .flatMap(([aa, codons]) => codons.map(c=>[c,aa]))
+    .reduce((o,[c,aa])=>(o[c]=aa,o), {});
+
+  // Преобразование текста → последовательность аминокислот
+  function textToAminoSeq(text) {
+    // UTF-8: каждый символ → 8 бит
+    const bits = text.split('')
+      .map(ch => ch.charCodeAt(0).toString(2).padStart(8,'0'))
+      .join('');
+    let seq = 'M'; // старт-кодон (метионин)
+    // По 2 бита → одну из 4 аминокислот (A, G, P, V)
+    for (let i = 0; i < bits.length; i += 2) {
+      const b = bits.slice(i, i+2);
+      seq += ({'00':'A','01':'G','10':'P','11':'V'}[b]||'A');
+    }
+    return seq + '*'; // добавляем стоп-кодон
+  }
+
+  // Кодирование текста → ДНК
+  function encodeTextToBiologicalDNA(text) {
+    const aaSeq = textToAminoSeq(text);
+    // Для каждого аминокислотного символа выбираем случайный кодон
+    return aaSeq.split('').map(aa => {
+      const choices = codonMap[aa];
+      if (!choices) throw new Error('Неизвестная аминокислота: ' + aa);
+      return choices[Math.floor(Math.random()*choices.length)];
+    }).join('');
+  }
+
+  // Декодирование ДНК → текст
+  function decodeBiologicalDNAToText(dna) {
+    // Разбить по триплетам
+    const codons = dna.match(/.{1,3}/g) || [];
+    let aaSeq = codons.map(c => reverseCodonMap[c] || '?').join('');
+    // Проверка рамки: старт и стоп
+    if (aaSeq[0] !== 'M' || aaSeq.slice(-1) !== '*') {
+      throw new Error('Неверная рамка: нет старт/стоп');
+    }
+    aaSeq = aaSeq.slice(1, -1);
+    // Каждый AA → 2 бита
+    const bits = aaSeq.split('')
+      .map(aa => ({'A':'00','G':'01','P':'10','V':'11'}[aa]||'00'))
+      .join('');
+    // Собрать обратно текст по 8 бит
+    let text = '';
+    for (let i = 0; i < bits.length; i += 8) {
+      const byte = bits.slice(i, i+8);
+      if (byte.length === 8) text += String.fromCharCode(parseInt(byte,2));
+    }
+    return text;
+  }
+
+  // --------------------
+  // heliaNode.js
+  // --------------------
+  import { createHelia } from 'https://cdn.jsdelivr.net/npm/helia@^3.0.0/dist/index.min.js';
+  import { unixfs } from 'https://cdn.jsdelivr.net/npm/@helia/unixfs@^5.0.0/dist/index.min.js';
+  import { MemoryDatastore } from 'https://cdn.jsdelivr.net/npm/datastore-core@^9.0.0/dist/index.min.js';
+  import { memoryBlockstore } from 'https://cdn.jsdelivr.net/npm/blockstore-core@^4.0.0/dist/index.min.js';
+
+  // Инициализация Helia-ноды
+  async function initHelia() {
+    const datastore = new MemoryDatastore();
+    const blockstore = memoryBlockstore();
+    const helia = await createHelia({ datastore, blockstore });
+    const fs = await unixfs(helia);
+    return { helia, fs };
+  }
+
+  // --------------------
+  // fileManager.js
+  // --------------------
+  // Предпросмотр локального файла
+  function previewLocalFile(file, container) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      container.innerHTML = '';
+      const url = e.target.result;
+      if (file.type.startsWith('image/')) {
+        container.innerHTML = `<img src="${url}">`;
+      } else if (file.type.startsWith('video/')) {
+        container.innerHTML = `<video controls src="${url}"></video>`;
+      } else if (file.type.startsWith('audio/')) {
+        container.innerHTML = `<audio controls src="${url}"></audio>`;
+      } else if (file.type === 'application/pdf') {
+        container.innerHTML = `<iframe src="${url}"></iframe>`;
+      } else {
+        container.innerHTML = `<pre>Предпросмотр недоступен</pre>`;
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Загрузка файла в IPFS
+  async function addFile(fs, file) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const cid = await fs.addBytes(bytes);
+    return cid.toString();
+  }
+
+  // Получение содержимого по CID
+  async function catFile(fs, cid) {
+    let content = '';
+    const decoder = new TextDecoder();
+    for await (const chunk of fs.cat(cid)) {
+      content += decoder.decode(chunk, { stream: true });
+    }
+    return content + decoder.decode();
+  }
+
+  // Листинг директории
+  async function listDir(fs, cid) {  
+    const entries = [];
+    for await (const e of fs.ls(cid)) {
+      entries.push({ name: e.name, cid: e.cid.toString() });
+    }
+    return entries;
+  }
+
+  // --------------------
+  // main.js
+  // --------------------
+  let heliaNode, fs;
+
+  // UI-элементы
+  const statusEl = document.getElementById('status');
+  const fileInput = document.getElementById('fileInput');
+  const previewEl = document.getElementById('preview');
+  const cidOutput = document.getElementById('cidOutput');
+  const retrievedContentEl = document.getElementById('retrievedContent');
+  const listOutput = document.getElementById('listOutput');
+
+  // Шифратор ДНК
+  document.getElementById('encodeBtn').onclick = () => {
+    try {
+      document.getElementById('dnaText').value =
+        encodeTextToBiologicalDNA(document.getElementById('plainText').value);
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    }
+  };
+  document.getElementById('decodeBtn').onclick = () => {
+    try {
+      document.getElementById('plainText').value =
+        decodeBiologicalDNAToText(document.getElementById('dnaText').value);
+    } catch (e) {
+      alert('Ошибка: ' + e.message);
+    }
+  };
+
+  // Helia-нода
+  document.getElementById('startNodeBtn').onclick = async () => {
+    statusEl.textContent = 'Запуск…';
+    ({ heliaNode, fs } = await initHelia());
+    statusEl.textContent = 'Online';
+  };
+  document.getElementById('stopNodeBtn').onclick = () => {
+    heliaNode.libp2p.stop();
+    statusEl.textContent = 'Offline';
+  };
+
+  // Предпросмотр
+  fileInput.onchange = () => previewLocalFile(fileInput.files[0], previewEl);
+
+  // Загрузка файла
+  document.getElementById('uploadBtn').onclick = async () => {
+    if (!fs) { alert('Запустите узел!'); return; }
+    cidOutput.textContent = await addFile(fs, fileInput.files[0]);
+  };
+
+  // Получение файла
+  document.getElementById('retrieveBtn').onclick = async () => {
+    if (!fs) { alert('Запустите узел!'); return; }
+    retrievedContentEl.textContent = await catFile(fs, document.getElementById('catCidInput').value);
+  };
+
+  // Листинг директории
+  document.getElementById('listBtn').onclick = async () => {
+    if (!fs) { alert('Запустите узел!'); return; }
+    listOutput.innerHTML = '';
+    const items = await listDir(fs, document.getElementById('dirCidInput').value);
+    items.forEach(i => listOutput.innerHTML += `<li>${i.name}: ${i.cid}</li>`);
+  };
+  </script>
+</body>
+</html>
