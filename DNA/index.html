@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>DNA</title>
+  <title>DNA & Helia Студия</title>
+  <!-- Roboto Mono из Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet"/>
   <style>
     :root {
@@ -32,7 +33,7 @@
   </style>
 </head>
 <body>
-  <header class="header"><h1>DNA & BLOCKCHAIN</h1></header>
+  <header class="header"><h1>DNA & Helia Студия</h1></header>
   <main class="container">
     <!-- 1. ДНК-шифратор -->
     <section class="card dna-card">
@@ -45,7 +46,7 @@
       <textarea id="dnaText" placeholder="Здесь появится ДНК-цепочка…" readonly></textarea>
     </section>
 
-    <!-- 2. Helia/IPFS хранилище -->
+    <!-- 2. Распределённое хранилище через Helia/IPFS -->
     <section class="card">
       <h2>2. Распределённое хранилище</h2>
       <div class="controls">
@@ -58,21 +59,21 @@
       <p>CID: <span id="cidOutput">N/A</span></p>
       <h3>Предпросмотр</h3>
       <div class="preview-container" id="preview"></div>
-      <input type="text" id="catCidInput" placeholder="Введите CID для получения"/>
+      <input type="text" id="catCidInput" placeholder="CID для получения"/>
       <button id="retrieveBtn">Получить содержимое</button>
       <pre id="retrievedContent">N/A</pre>
-      <input type="text" id="dirCidInput" placeholder="Введите CID каталога"/>
+      <input type="text" id="dirCidInput" placeholder="CID каталога"/>
       <button id="listBtn">Список файлов</button>
       <ul id="listOutput"></ul>
     </section>
   </main>
 
   <script type="module">
-    // ─── ES-MODULE IMPORTS ───────────────────────────────────────────────
-    import { createHelia } from 'https://cdn.jsdelivr.net/npm/helia@^3.0.0/dist/index.min.js';
-    import { unixfs      } from 'https://cdn.jsdelivr.net/npm/@helia/unixfs@^5.0.0/dist/index.min.js';
+    // ── 1) ESM-импорты через esm.sh (работают в браузере) ──────
+    import { createHelia } from 'https://esm.sh/helia@3.0.0';                           // :contentReference[oaicite:0]{index=0}
+    import { unixfs      } from 'https://esm.sh/@helia/unixfs@5.0.0';                   // :contentReference[oaicite:1]{index=1}
 
-    // ─── 1) DNA-ENCODER CORE ────────────────────────────────────────────
+    // ── 2) Ядро ДНК-шифратора ─────────────────────────────────
     const codonMap = {
       A:['GCT','GCC','GCA','GCG'], R:['CGT','CGC','CGA','CGG','AGA','AGG'],
       N:['AAT','AAC'], D:['GAT','GAC'], C:['TGT','TGC'], Q:['CAA','CAG'],
@@ -84,49 +85,40 @@
       '*':['TAA','TAG','TGA']
     };
     const reverseCodonMap = Object.entries(codonMap)
-      .flatMap(([aa,c])=>c.map(codon=>[codon,aa]))
-      .reduce((o,[codon,aa])=>(o[codon]=aa,o), {});
+      .flatMap(([aa, cods]) => cods.map(c=>[c,aa]))
+      .reduce((o,[c,aa])=>(o[c]=aa,o), {});
 
     function textToAminoSeq(text) {
-      // 1 символ → 8 бит → конкатенация
+      // Символ→байт→8 бит
       const bits = Array.from(text).map(ch=>
         ch.charCodeAt(0).toString(2).padStart(8,'0')
       ).join('');
-      // Старт
-      let seq = 'M';
-      // Каждые 2 бита → A/G/P/V
+      let seq = 'M'; // старт-кодон
       for (let i=0; i<bits.length; i+=2) {
-        seq += ({'00':'A','01':'G','10':'P','11':'V'}[bits.slice(i,i+2)]||'A');
+        seq += ({'00':'A','01':'G','10':'P','11':'V'}[bits.slice(i,i+2)] || 'A');
       }
-      // Стоп
-      return seq + '*';
+      return seq + '*'; // стоп-кодон
     }
 
     function encodeTextToBiologicalDNA(text) {
       const aaSeq = textToAminoSeq(text);
-      // Случайный выбор кодона для каждой AA
       return aaSeq.split('').map(aa=>{
         const opts = codonMap[aa];
-        if (!opts) throw new Error('Неизвестная аминокислота: ' + aa);
+        if (!opts) throw new Error(`Неизвестная аминокислота: ${aa}`);
         return opts[Math.floor(Math.random()*opts.length)];
       }).join('');
     }
 
     function decodeBiologicalDNAToText(dna) {
-      // Разбить на триплеты
-      const codons = dna.match(/.{1,3}/g) || [];
-      // AA-строка
+      const codons = dna.match(/.{1,3}/g)||[];
       let aaSeq = codons.map(c=>reverseCodonMap[c]||'?').join('');
-      // Проверка рамки
-      if (aaSeq[0] !== 'M' || aaSeq.slice(-1) !== '*') {
-        throw new Error('Неверная рамка: нет старт/стоп-кодонов');
+      if (aaSeq[0]!=='M'||aaSeq.slice(-1)!=='*') {
+        throw new Error('Неверная рамка: нет старт/стоп-кодона');
       }
       aaSeq = aaSeq.slice(1,-1);
-      // AA → биты
-      const bits = aaSeq.split('').map(aa=>({
-        'A':'00','G':'01','P':'10','V':'11'
-      }[aa]||'00')).join('');
-      // Собрать символы по 8 бит
+      const bits = aaSeq.split('').map(aa=>
+        ({'A':'00','G':'01','P':'10','V':'11'}[aa]||'00')
+      ).join('');
       let text = '';
       for (let i=0; i<bits.length; i+=8) {
         const byte = bits.slice(i,i+8);
@@ -135,24 +127,29 @@
       return text;
     }
 
-    // ─── 2) INIT HELIA/IPFS ────────────────────────────────────────────
+    // ── 3) Инициализация Helia/IPFS ────────────────────────────────
     async function initHelia() {
-      // По-умолчанию Helia создаёт in-memory datastore и blockstore
+      // createHelia() под капотом создаёт in-memory datastore/blockstore 
       const helia = await createHelia();
       const fs    = await unixfs(helia);
       return { helia, fs };
     }
 
-    // ─── 3) FILE MANAGER ───────────────────────────────────────────────
+    // ── 4) File Manager для предпросмотра и IPFS ─────────────────
     function previewLocalFile(file, container) {
       const reader = new FileReader();
       reader.onload = e => {
         const url = e.target.result;
-        if (file.type.startsWith('image/'))      container.innerHTML = `<img src="${url}">`;
-        else if (file.type.startsWith('video/')) container.innerHTML = `<video controls src="${url}"></video>`;
-        else if (file.type.startsWith('audio/')) container.innerHTML = `<audio controls src="${url}"></audio>`;
-        else if (file.type==='application/pdf')  container.innerHTML = `<iframe src="${url}"></iframe>`;
-        else                                     container.innerHTML = `<pre>Предпросмотр недоступен</pre>`;
+        if (file.type.startsWith('image/'))
+          container.innerHTML = `<img src="${url}">`;
+        else if (file.type.startsWith('video/'))
+          container.innerHTML = `<video controls src="${url}"></video>`;
+        else if (file.type.startsWith('audio/'))
+          container.innerHTML = `<audio controls src="${url}"></audio>`;
+        else if (file.type==='application/pdf')
+          container.innerHTML = `<iframe src="${url}"></iframe>`;
+        else
+          container.innerHTML = `<pre>Предпросмотр недоступен</pre>`;
       };
       reader.readAsDataURL(file);
     }
@@ -161,24 +158,24 @@
       return (await fs.addBytes(bytes)).toString();
     }
     async function catFile(fs, cid) {
-      let result = '', dec = new TextDecoder();
-      for await (const chunk of fs.cat(cid)) result += dec.decode(chunk,{stream:true});
-      return result + dec.decode();
+      let out = '', dec = new TextDecoder();
+      for await (const ch of fs.cat(cid)) out += dec.decode(ch,{stream:true});
+      return out + dec.decode();
     }
     async function listDir(fs, cid) {
-      const out = [];
-      for await (const e of fs.ls(cid)) out.push({name:e.name,cid:e.cid.toString()});
-      return out;
+      const arr = [];
+      for await (const e of fs.ls(cid)) arr.push({name:e.name,cid:e.cid.toString()});
+      return arr;
     }
 
-    // ─── 4) UI CONTROLS ─────────────────────────────────────────────────
-    // DNA
-    document.getElementById('encodeBtn').onclick = ()=> {
+    // ── 5) UI-контроллер ────────────────────────────────────────────
+    // ДНК-шифратор
+    document.getElementById('encodeBtn').onclick = ()=>{
       try { document.getElementById('dnaText').value =
         encodeTextToBiologicalDNA(document.getElementById('plainText').value);
       } catch(e){ alert('Ошибка: '+e.message); }
     };
-    document.getElementById('decodeBtn').onclick = ()=> {
+    document.getElementById('decodeBtn').onclick = ()=>{
       try { document.getElementById('plainText').value =
         decodeBiologicalDNAToText(document.getElementById('dnaText').value);
       } catch(e){ alert('Ошибка: '+e.message); }
@@ -187,29 +184,30 @@
     // Helia/IPFS
     let heliaNode, fs;
     document.getElementById('startNodeBtn').onclick = async ()=>{
-      document.getElementById('status').textContent='Запуск…';
-      ({helia:heliaNode,fs} = await initHelia());
-      document.getElementById('status').textContent='Online';
+      document.getElementById('status').textContent = 'Запуск…';
+      ({helia:heliaNode, fs} = await initHelia());
+      document.getElementById('status').textContent = 'Online';
     };
     document.getElementById('stopNodeBtn').onclick = ()=>{
       heliaNode.libp2p.stop();
-      document.getElementById('status').textContent='Offline';
+      document.getElementById('status').textContent = 'Offline';
     };
 
     const fileInput = document.getElementById('fileInput');
-    fileInput.onchange = ()=> previewLocalFile(fileInput.files[0],document.getElementById('preview'));
+    fileInput.onchange = ()=> previewLocalFile(fileInput.files[0], document.getElementById('preview'));
+
     document.getElementById('uploadBtn').onclick = async ()=>{
-      if(!fs) return alert('Сначала запустите узел!');
-      document.getElementById('cidOutput').textContent = await addFile(fs,fileInput.files[0]);
+      if (!fs) return alert('Сначала запустите узел!');
+      document.getElementById('cidOutput').textContent = await addFile(fs, fileInput.files[0]);
     };
     document.getElementById('retrieveBtn').onclick = async ()=>{
-      if(!fs) return alert('Сначала запустите узел!');
+      if (!fs) return alert('Сначала запустите узел!');
       document.getElementById('retrievedContent').textContent =
-        await catFile(fs,document.getElementById('catCidInput').value);
+        await catFile(fs, document.getElementById('catCidInput').value);
     };
     document.getElementById('listBtn').onclick = async ()=>{
-      if(!fs) return alert('Сначала запустите узел!');
-      const items = await listDir(fs,document.getElementById('dirCidInput').value);
+      if (!fs) return alert('Сначала запустите узел!');
+      const items = await listDir(fs, document.getElementById('dirCidInput').value);
       document.getElementById('listOutput').innerHTML =
         items.map(i=>`<li>${i.name}: ${i.cid}</li>`).join('');
     };
