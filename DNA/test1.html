@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Терминал — ДНК-шифрование</title>
+  <!-- D3.js для визуализации -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    /* (стили аналогичны оригиналу) */
+    ::-webkit-scrollbar { width: 0; height: 0; }
+    html, body { margin:0; padding:0; width:100%; height:100%; background:#1e1e1e; color:#ccc; font-family: Menlo, Consolas, monospace; overflow:hidden; }
+    .terminal { position:relative; display:flex; flex-direction:column; height:100%; padding-bottom:60px; }
+    .indicators { position:absolute; top:0; left:0; right:0; bottom:60px; background:rgba(30,30,30,0.4); backdrop-filter:blur(8px); z-index:1; }
+    #graph { width:100%; height:100%; }
+    .output { position:relative; z-index:3; flex:1; overflow-y:auto; padding:16px; line-height:1.4; }
+    .output .line { white-space:pre-wrap; word-break:break-all; margin:2px 0; }
+    .dna-seq { display:flex; overflow-x:auto; padding:4px 0; margin:4px 0; }
+    .dna-seq span { display:flex; align-items:center; justify-content:center; width:80px; height:40px; margin-right:4px; font-size:1.2rem; font-weight:bold; color:#fff; border-radius:4px; }
+    .dna-A{background:#4caf50;} .dna-C{background:#2196f3;} .dna-G{background:#ffeb3b;color:#000;} .dna-T{background:#f44336;}
+    .file-view{display:flex;flex-direction:column;align-items:center;margin:8px 0;} .file-view img, .file-view video, .file-view audio, .file-view object{max-width:45%; max-height:45vh;} .file-view a.download-link{margin-top:4px;color:#0e639c;text-decoration:underline;}
+    .input-area{position:fixed;bottom:0;left:0;right:0;height:60px;background:#252526;display:flex;align-items:center;padding:0 10px;box-shadow:0 1px 1px rgba(0,0,0,0.5);z-index:4;}
+    .options{display:flex;gap:6px;height:100%;}.options.left{margin-right:1.25%;}.options.right{margin-left:1.25%;}
+    .options label{display:inline-block;height:100%;}
+    .options input{position:absolute;opacity:0;pointer-events:none;}
+    .option{display:flex;align-items:center;justify-content:center;height:100%;padding:0 12px;border-radius:4px;background:#3c3c3c;color:#ccc;cursor:pointer;transition:background .2s,color .2s;font-size:0.9rem;}
+    .option:hover{background:#505050;}
+    .options input:checked + .option{background:#0e639c;color:#fff;}
+    #cmdInput{flex:1;background:transparent;border:none;outline:none;color:#eee;font-size:1rem;padding:8px;caret-color:#0e639c;}
+    #cmdInput::placeholder{color:#777;}
+    @media(max-width:600px){.options{display:none;}.input-area{padding:0 5px;}}
+    circle{fill:#333333;}
+  </style>
+</head>
+<body>
+  <div class="terminal">
+    <div class="indicators" id="indicators"><svg id="graph"></svg></div>
+    <div class="output" id="output"></div>
+    <div class="input-area">
+      <div class="options left">
+        <label><input type="radio" name="left" value="dna" checked><span class="option">DNA</span></label>
+        <label><input type="radio" name="left" value="text"><span class="option">TEXT</span></label>
+        <label><input type="radio" name="left" value="save"><span class="option">SAVE</span></label>
+        <label><input type="radio" name="left" value="load"><span class="option">LOAD</span></label>
+        <label><input type="radio" name="left" value="help"><span class="option">HELP</span></label>
+      </div>
+      <input id="cmdInput" type="text" placeholder="Введите команду…" />
+      <div class="options right">
+        <label><input type="radio" name="right" value="node"><span class="option">NODE</span></label>
+        <label><input type="radio" name="right" value="upload"><span class="option">UPLD</span></label>
+        <label><input type="radio" name="right" value="cat"><span class="option">CAT</span></label>
+        <label><input type="radio" name="right" value="ls"><span class="option">LS</span></label>
+        <label><input type="radio" name="right" value="exit"><span class="option">EXIT</span></label>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="fileInput" style="display:none" />
+  <!-- Helia UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/helia@3.0.0/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@helia/unixfs@2.0.0/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/datastore-core@9.0.3/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/blockstore-core@4.1.0/dist/index.min.js"></script>
+  <script>
+  (async () => {
+    // DOM элементы
+    const outputEl = document.getElementById('output');
+    const svg = d3.select('#graph');
+    const width = document.getElementById('indicators').clientWidth;
+    const height = document.getElementById('indicators').clientHeight;
+    const MAX_NODES = 50;
+
+    // Helia
+    let fs, heliaNode;
+    const nodes = [], links = [];
+    const statusColor = { disc: '#e74c3c', conn: '#2ecc71' };
+
+    // D3 Simulation...
+    const simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id(d => d.id).distance(300).strength(0.03))
+      .force('charge', d3.forceManyBody().strength(-600))
+      .force('center', d3.forceCenter(width/2, height/2))
+      .force('collide', d3.forceCollide(30))
+      .on('tick', ticked);
+
+    const linkGroup = svg.append('g').attr('stroke','rgba(59,59,59,0.2)').attr('stroke-width',1);
+    const nodeGroup = svg.append('g');
+    function ticked(){ linkGroup.selectAll('line')
+        .attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+        .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+      nodeGroup.selectAll('g').attr('transform',d=>`translate(${d.x},${d.y})`);
+    }
+    function updateGraph(){
+      // links
+      const l = linkGroup.selectAll('line').data(links, d=>`${d.source.id}-${d.target.id}`);
+      l.exit().remove(); l.enter().append('line');
+      // nodes
+      const n = nodeGroup.selectAll('g').data(nodes, d=>d.id);
+      const en = n.enter().append('g').call(drag(simulation));
+      en.append('circle').attr('r',12).attr('opacity',0.8).attr('fill',d=>statusColor[d.status]||'#3498db');
+      en.append('text').text(d=>d.id.slice(0,6)).attr('x',16).attr('y',6).attr('fill','#eee').attr('font-size','0.75rem');
+      n.exit().remove();
+      simulation.nodes(nodes); simulation.force('link').links(links); simulation.alpha(1).restart();
+    }
+    function drag(sim){ return d3.drag()
+      .on('start',(e,d)=>{ if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag',(e,d)=>{ d.fx=e.x; d.fy=e.y; })
+      .on('end',(e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }); }
+    function writeLine(text){ const div=document.createElement('div'); div.className='line'; div.textContent=text; outputEl.appendChild(div); outputEl.scrollTop=outputEl.scrollHeight; }
+    function renderDNA(seq){ const cont=document.createElement('div'); cont.className='dna-seq'; Array.from(seq).forEach(ch=>{ const sp=document.createElement('span'); sp.className='dna-'+ch; sp.textContent=ch; cont.appendChild(sp);} ); outputEl.appendChild(cont); outputEl.scrollTop=outputEl.scrollHeight; }
+
+    // -- CryptoModule for AES encryption --
+    class CryptoModule {
+      static async encrypt(data, key) {
+        const enc = new TextEncoder().encode(data);
+        const cryptoKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(key), {name:'AES-CBC'}, false, ['encrypt']);
+        const iv = crypto.getRandomValues(new Uint8Array(16));
+        const ct = await crypto.subtle.encrypt({name:'AES-CBC', iv}, cryptoKey, enc);
+        const buf = new Uint8Array(iv.byteLength + ct.byteLength); buf.set(iv,0); buf.set(new Uint8Array(ct), iv.byteLength);
+        return btoa(String.fromCharCode(...buf));
+      }
+      static async decrypt(dataB64, key) {
+        const buf = Uint8Array.from(atob(dataB64), c=>c.charCodeAt(0));
+        const iv = buf.slice(0,16), ct = buf.slice(16);
+        const cryptoKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(key), {name:'AES-CBC'}, false, ['decrypt']);
+        const pt = await crypto.subtle.decrypt({name:'AES-CBC', iv}, cryptoKey, ct);
+        return new TextDecoder().decode(pt);
+      }
+    }
+
+    // -- DNAEncoder for biofunctional DNA coding --
+    class DNAEncoder {
+      static codonMap = { 'M':['ATG'], 'A':['GCT','GCC','GCA','GCG'], 'G':['GGT','GGC','GGA','GGG'], 'P':['CCT','CCC','CCA','CCG'], 'V':['GTT','GTC','GTA','GTG'], '*':['TAA','TAG','TGA'] };
+      static revMap = Object.entries(DNAEncoder.codonMap).reduce((a,[aa,c])=>{c.forEach(cd=>a[cd]=aa);return a;},{});
+      static async encode(text, key) {
+        // Шифрование
+        const encB64 = await CryptoModule.encrypt(text, key);
+        const bin = atob(encB64).split('').map(c=>c.charCodeAt(0).toString(2).padStart(8,'0')).join('');
+        // Формируем аминокислотную последовательность с START/STOP
+        let aaSeq = 'M'; for(let i=0;i<bin.length;i+=2) aaSeq += {'00':'A','01':'G','10':'P','11':'V'}[bin.slice(i,i+2)]; aaSeq += '*';
+        // Преобразуем в кодоны
+        return aaSeq.split('').map(aa=>{
+          const cds = DNAEncoder.codonMap[aa];
+          return cds[Math.floor(Math.random()*cds.length)];
+        }).join('');
+      }
+      static async decode(dnaSeq, key) {
+        const cods = dnaSeq.match(/.{3}/g)||[];
+        let aaSeq = cods.map(c=>DNAEncoder.revMap[c]||'?').join('');
+        if(aaSeq[0]!=='M'||aaSeq.slice(-1)!=='*') throw new Error('Некорректная последовательность');
+        aaSeq = aaSeq.slice(1,-1);
+        const bin = aaSeq.split('').map(aa=>({'A':'00','G':'01','P':'10','V':'11'}[aa]||'00')).join('');
+        const bytes=[]; for(let i=0;i<bin.length;i+=8){ const b=bin.slice(i,i+8); if(b.length===8) bytes.push(parseInt(b,2)); }
+        const b64 = btoa(String.fromCharCode(...bytes));
+        return CryptoModule.decrypt(b64, key);
+      }
+    }
+
+    // Кодирование и сохранение
+    async function encodeStoreDNA(text) {
+      try {
+        const key = prompt('Введите ключ шифрования');
+        const dna = await DNAEncoder.encode(text, key);
+        renderDNA(dna);
+        if(fs) {
+          const cid = await fs.addBytes(new TextEncoder().encode(dna));
+          localStorage.setItem('mime_'+cid, 'text/plain');
+          writeLine(`CID: ${cid}`);
+        }
+      } catch(e){ writeLine(`Ошибка: ${e.message}`); }
+    }
+
+    // Обработка команд
+    const inputEl = document.getElementById('cmdInput');
+    inputEl.addEventListener('keydown', async e => {
+      if(e.key!=='Enter') return;
+      const line = inputEl.value.trim(); if(!line) return;
+      const [cmd, ...parts] = line.split(' '); const arg = parts.join(' ');
+      const mode = document.querySelector('input[name="left"]:checked').value;
+      if(cmd!=='encode') writeLine('> '+line);
+      inputEl.value='';
+      switch(cmd) {
+        case 'help':
+          ['help','encode','decode','node','peers','upload','cat','clear'].forEach(h=>writeLine(h)); break;
+        case 'encode':
+          if(!arg) { writeLine('Исп: encode <text>'); break; }
+          if(mode==='dna') await encodeStoreDNA(arg);
+          else writeLine(arg);
+          break;
+        case 'decode':
+          if(!arg){ writeLine('Исп: decode <dna>'); break; }
+          try{
+            const modeL = document.querySelector('input[name="left"]:checked').value;
+            if(modeL==='dna') {
+              const key = prompt('Введите ключ для расшифровки');
+              const txt = await DNAEncoder.decode(arg, key);
+              writeLine(txt);
+            } else {
+              // старое decode
+              const bits = arg.split('').map(ch=>({'A':'00','C':'01','G':'10','T':'11'}[ch]||'')).join('');
+              const bytes = new Uint8Array(bits.match(/.{1,8}/g).map(b=>parseInt(b,2)));
+              writeLine(new TextDecoder().decode(bytes));
+            }
+          } catch(e){ writeLine(`Ошибка: ${e.message}`); }
+          break;
+        // остальные команды без изменений
+        case 'clear': outputEl.innerHTML=''; break;
+        case 'node': /*...*/ writeLine('node команда'); break;
+        case 'peers': writeLine(`Peers: ${nodes.length}`); break;
+        case 'upload': document.getElementById('fileInput').click(); break;
+        case 'cat': /*...*/ writeLine('cat команда'); break;
+        default: writeLine(`Неизвестная команда: ${cmd}`);
+      }
+    });
+    // Файловый input
+    document.getElementById('fileInput').addEventListener('change', async e=>{/*...*/});
+    writeLine('Терминал запущен, введите "help".');
+  })();
+  </script>
+</body>
+</html>
